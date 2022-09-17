@@ -1,0 +1,39 @@
+﻿<Window x:Class="WPF_App_Demo.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:local="clr-namespace:WPF_App_Demo"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="650" Width="800">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="216*"/>
+            <RowDefinition/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.RowSpan="2">
+            <DocumentViewer x:Name="documentViewer" Height="100"/>
+            <GroupBox x:Name="groupBox" Height="100" Header="TextBox">
+                <TextBox x:Name="textBox" HorizontalAlignment="Left" TextWrapping="Wrap"  Width="800" />
+            </GroupBox>
+            <GroupBox x:Name="groupBox1" Height="100" Header="TextBlock">
+                <TextBlock x:Name="textBlock" TextWrapping="Wrap" Margin="0,0,0,0" />
+            </GroupBox>
+            <GroupBox x:Name="groupBox2" Height="100" Header="RichTextBox">
+                <RichTextBox x:Name="richTextBox">
+                    <FlowDocument>
+                        <Paragraph>
+                            <Run Text="RichTextBox"/>
+                        </Paragraph>
+                    </FlowDocument>
+                </RichTextBox>
+            </GroupBox>
+            
+            <wv2:WebView2 Name="webBrowser"
+                  Source="http://google.com/" Height="600" NavigationStarting="webBrowser_NavigationStarting"
+   />
+        </StackPanel>
+
+    </Grid>
+</Window>
