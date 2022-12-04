@@ -39,8 +39,8 @@ This tester/demo should include these features:
 
     (Of course, "white-out" **assumes** any background color has already been adjusted to become white (and text black) before you feed these regions to Tesseract via that  'do one region at a time' loop described above.
     
-    I haven't seen better approaches for this workflow where user-defined regions should prevale over OCR engine heuristics.
-- can this process run in mutiple instance in parallel? Is that smart to even consider or can we load a multi-core machine sufficiently without parallellizing this? And how do the tools we'll be using cope with this 'running mutiple instances' goal of doing more OCR work faster?
+    I haven't seen better approaches for this workflow where user-defined regions should prevail over OCR engine heuristics.
+- can this process run in mutiple instances in parallel? Is that smart to even consider or can we load a multi-core machine sufficiently without parallellizing this? And how do the tools we'll be using cope with this 'running mutiple instances' goal of doing more OCR work faster?
 - should this become a tool separate from Qiqqa itself, as suggested by Narayan @raindropsfromsky?
   + **do note** that this is sounding a lot like building a toolchain that is an alternative to PaperPort, OmniPage and other document scanning+management tool sets. I don't the "alternative to" but that implies it's a lot of work for a single guy right now. Hmmmmmmmmm...
   
