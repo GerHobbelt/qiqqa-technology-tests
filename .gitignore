@@ -38,3 +38,16 @@ bin
 *.user
 *.FileListAbsolute.txt
 /TypeScript VueJS App/dist/js/
+
+**/Debug-64/
+**/Debug-32/
+**/Release-64/
+**/Release-32/
+
+**/x64/Debug/
+**/x86/Debug/
+**/x64/Release/
+**/x86/Release/
+
+**/node_modules/
+

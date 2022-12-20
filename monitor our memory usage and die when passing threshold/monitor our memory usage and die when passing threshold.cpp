@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/types.h>
 
 
@@ -161,6 +162,41 @@ static void showMemoryConsumption()
         ErrorExit(L"GlobalMemoryStatusEx");
     }
 
+    int heap_count = 1;
+    HANDLE heap_list[256];
+    DWORD rv = GetProcessHeaps(heap_count, heap_list);
+    if (rv == 0)
+    {
+        ErrorExit(L"GetProcessHeaps(1)");
+    }
+    if (rv > heap_count)
+    {
+        rv = GetProcessHeaps(sizeof(heap_list) / sizeof(heap_list[0]), heap_list);
+        if (rv == 0)
+        {
+            ErrorExit(L"GetProcessHeaps(N)");
+        }
+        heap_count = rv;
+    }
+
+    HEAP_SUMMARY total_summary = { sizeof(total_summary) };
+
+    for (int i = 0; i < heap_count; i++)
+    {
+        HEAP_SUMMARY summary = { sizeof(summary) };
+        BOOL err = HeapSummary(heap_list[i], 0, &summary);
+        // fix for the Win32 API documentation: turns out that HeapSummary returns 1, with GetLastError() set to S_OK, when it successfully filled the summary info struct.
+        if (err != S_OK && GetLastError() != S_OK)
+        {
+            ErrorExit(L"HeapSummary");
+        }
+
+        total_summary.cbAllocated += summary.cbAllocated;
+        total_summary.cbCommitted += summary.cbCommitted;
+        total_summary.cbMaxReserve += summary.cbMaxReserve;
+        total_summary.cbReserved += summary.cbReserved;
+    }
+
     // perform some heuristics on the memory consumption to decide when to abort:
     if (statex.dwMemoryLoad > 90)
     {
@@ -173,6 +209,14 @@ static void showMemoryConsumption()
         ExitProcess(0);
     }
     if (pmc.WorkingSetSize >= 0.75 * statex.ullTotalPhys)
+    {
+        debugPrint(L"Aborting @ 75%% of total physical memory consumed threshold.\n");
+        ExitProcess(0);
+    }
+    //auto totmem = total_summary.cbAllocated + total_summary.cbCommitted + total_summary.cbReserved;
+    auto totmem = total_summary.cbReserved;
+    auto delta = (int64_t)totmem - (int64_t)pmc.WorkingSetSize;
+    if (totmem >= 0.75 * statex.ullTotalPhys)
     {
         debugPrint(L"Aborting @ 75%% of total physical memory consumed threshold.\n");
         ExitProcess(0);
