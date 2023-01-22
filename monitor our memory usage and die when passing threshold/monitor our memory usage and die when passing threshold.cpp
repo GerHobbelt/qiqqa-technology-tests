@@ -3,6 +3,19 @@
 //
 
 
+
+#if defined(WIN32) || defined(WIN64) || defined(_WIN32)
+#include <ntstatus.h>
+
+// We need to prevent winnt.h from defining the core STATUS codes,
+// otherwise they will conflict with what we're getting from ntstatus.h
+#define UMDF_USING_NTSTATUS 1
+#define WIN32_NO_STATUS     1
+
+#endif
+
+
+
 // use the portability work of cUrl: faster than writing our own header files...
 #include "curl_setup.h"
 
@@ -27,12 +40,21 @@ int main(void) {
 
 #define PSAPI_VERSION 2
 
+#include <math.h>
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <tchar.h>
 #include <strsafe.h>
 #include <eh.h>
 #include <stdarg.h>
+#include <winternl.h>
+#include <winnt.h>
+
+
+#ifndef MAX
+#define MAX(a, b)   ((a) > (b) ? (a) : (b))
+#endif
+
 
 #define ASSERT(check)           \
 if (!(check))                   \
@@ -49,6 +71,16 @@ if (!(check))                   \
 
 #define BUFSIZE 4096
 
+static float round_nice(float v)
+{
+    float lg = log10(v / 10);
+    int d = round(lg);
+    float pw = pow(10, d);
+    float vi = v / pw;
+    vi = round(vi);
+    vi *= pw;
+    return vi;
+}
 
 // Format a readable error message, display a message box,
 // and exit from the application.
@@ -115,6 +147,12 @@ static void debugPrint(const wchar_t* msg, ...)
     _tprintf(TEXT("%s"), buf);
 }
 
+static size_t available_memory_size = 0;
+
+const int DIV = 1024;
+const float MDIV = DIV * DIV;
+const float GDIV = DIV * MDIV;
+
 static void showMemoryConsumption()
 {
     HANDLE hProcess;
@@ -144,9 +182,11 @@ static void showMemoryConsumption()
 
     if (GlobalMemoryStatusEx(&statex))
     {
-        const int DIV = 1024;
-        const float MDIV = DIV * DIV;
-        const float GDIV = DIV * MDIV;
+        if (!available_memory_size)
+        {
+            available_memory_size = statex.ullAvailPhys;
+        }
+
         debugPrint(L"There is  % 8d percent of memory in use.\n", (int)statex.dwMemoryLoad);
         debugPrint(L"There are %8.1f total MB of physical memory.\n", (SIZE_T)statex.ullTotalPhys / MDIV);
         debugPrint(L"There are %8.1f free  MB of physical memory.\n", (SIZE_T)statex.ullAvailPhys / MDIV);
@@ -162,7 +202,7 @@ static void showMemoryConsumption()
         ErrorExit(L"GlobalMemoryStatusEx");
     }
 
-    int heap_count = 1;
+    unsigned int heap_count = 1;
     HANDLE heap_list[256];
     DWORD rv = GetProcessHeaps(heap_count, heap_list);
     if (rv == 0)
@@ -181,7 +221,7 @@ static void showMemoryConsumption()
 
     HEAP_SUMMARY total_summary = { sizeof(total_summary) };
 
-    for (int i = 0; i < heap_count; i++)
+    for (unsigned int i = 0; i < heap_count; i++)
     {
         HEAP_SUMMARY summary = { sizeof(summary) };
         BOOL err = HeapSummary(heap_list[i], 0, &summary);
@@ -214,8 +254,7 @@ static void showMemoryConsumption()
         ExitProcess(0);
     }
     //auto totmem = total_summary.cbAllocated + total_summary.cbCommitted + total_summary.cbReserved;
-    auto totmem = total_summary.cbReserved;
-    auto delta = (int64_t)totmem - (int64_t)pmc.WorkingSetSize;
+    auto totmem = MAX(total_summary.cbReserved, pmc.WorkingSetSize);
     if (totmem >= 0.75 * statex.ullTotalPhys)
     {
         debugPrint(L"Aborting @ 75%% of total physical memory consumed threshold.\n");
@@ -226,14 +265,108 @@ static void showMemoryConsumption()
         debugPrint(L"Aborting @ 75%% of total virtual memory space consumed threshold.\n");
         ExitProcess(0);
     }
+
+    // --------------------------------------
+
+    typedef __kernel_entry NTSTATUS
+        NTAPI
+        NtQuerySystemInformation_t(
+            IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
+            OUT PVOID SystemInformation,
+            IN ULONG SystemInformationLength,
+            OUT PULONG ReturnLength OPTIONAL
+        );
+
+    uint64_t memory_pressure = 0;
+    HINSTANCE h = LoadLibrary(TEXT("ntdll.dll"));
+    if (h != NULL)
+    {
+        NtQuerySystemInformation_t* qsi_f = (NtQuerySystemInformation_t*)GetProcAddress(h, "NtQuerySystemInformation");
+        if (NULL != qsi_f)
+        {
+            ULONG siLength = 0;
+            SYSTEM_PROCESS_INFORMATION *proc_infos = NULL;
+            ULONG info_size = 1024 * sizeof(proc_infos[0]);
+            NTSTATUS st;
+            
+            do {
+                proc_infos = (SYSTEM_PROCESS_INFORMATION *)realloc(proc_infos, info_size);
+                ASSERT(proc_infos != NULL);
+                st = (*qsi_f)(SystemProcessInformation, proc_infos, info_size, &siLength);
+                if (st == S_OK) 
+                    break;
+                
+                if (st != STATUS_BUFFER_TOO_SMALL && st != STATUS_INFO_LENGTH_MISMATCH) 
+                {
+                    debugPrint(L"NtQuerySystemInformation failed with status code 0x%08lx.\n", (unsigned long)st);
+                    ExitProcess(0);
+                }
+
+                info_size *= 2;
+            } while (info_size <= 1e7);
+
+            if (st == S_OK)
+            {
+                SYSTEM_PROCESS_INFORMATION* proc_info = proc_infos;
+                
+                for (;;)
+                {
+                    memory_pressure += proc_info->WorkingSetSize;
+
+#if 0  // this code causes some obscure errors and crashes as we attempt to get info from various system/kernel process handles   :-S
+
+                    HANDLE hProcess2 = proc_info->UniqueProcessId;
+                    PROCESS_MEMORY_COUNTERS_EX pmc2 = { sizeof(pmc2), 0 };
+
+                    if (GetProcessMemoryInfo(hProcess2, (PPROCESS_MEMORY_COUNTERS)&pmc2, sizeof(pmc2)))
+                    {
+                        debugPrint(L"\t + PageFaultCount:             %8zu\n", (SIZE_T)pmc2.PageFaultCount);
+                        debugPrint(L"\t + PeakWorkingSetSize:         %8zu\n", pmc2.PeakWorkingSetSize);
+                        debugPrint(L"\t + WorkingSetSize:             %8zu\n", pmc2.WorkingSetSize);
+                        debugPrint(L"\t + QuotaPeakPagedPoolUsage:    %8zu\n", pmc2.QuotaPeakPagedPoolUsage);
+                        debugPrint(L"\t + QuotaPagedPoolUsage:        %8zu\n", pmc2.QuotaPagedPoolUsage);
+                        debugPrint(L"\t + QuotaPeakNonPagedPoolUsage: %8zu\n", pmc2.QuotaPeakNonPagedPoolUsage);
+                        debugPrint(L"\t + QuotaPeakNonPagedPoolUsage: %8zu\n", pmc2.QuotaNonPagedPoolUsage);
+                        debugPrint(L"\t + PagefileUsage:              %8zu\n", pmc2.PagefileUsage);
+                        debugPrint(L"\t + PeakPagefileUsage:          %8zu\n", pmc2.PeakPagefileUsage);
+                        debugPrint(L"\t + PrivateUsage:               %8zu\n", pmc2.PrivateUsage);
+                    }
+                    else
+                    {
+                        debugPrint(L"\t + WorkingSetSize:             %8zu\n", proc_info->WorkingSetSize);
+                    }
+#endif
+
+                    if (proc_info->NextEntryOffset == 0)
+                        break;
+
+                    proc_info = (SYSTEM_PROCESS_INFORMATION * ) (((uint8_t *)proc_info) + proc_info->NextEntryOffset);
+                }
+
+                uint64_t est_memory_pressure = statex.ullTotalPhys - statex.ullAvailPhys;
+                debugPrint(L"--> Netto global system memory pressure: %8.1f MB\n", memory_pressure / MDIV);
+                debugPrint(L"--> Bruto global system memory pressure: %8.1f MB\n", est_memory_pressure / MDIV);
+            }
+            else 
+            {
+                debugPrint(L"NtQuerySystemInformation required too much memory to our taste. Terminating the test app.\n");
+                ExitProcess(0);
+            }
+
+            free(proc_infos);
+        }
+
+        FreeLibrary(h);
+    }
 }
 
 static void growHeapAndWatch(int n)
 {
-    const int CHUNKSIZE = (int)25e6;
+    const size_t AV_MEM_1PCT = (size_t)(round_nice(available_memory_size / MDIV / 100) * MDIV);
+    const size_t CHUNKSIZE = MAX(25e6, AV_MEM_1PCT);
     void* p = malloc(CHUNKSIZE);
     ++n;
-    debugPrint(L"+ chunk %d\n", n);
+    debugPrint(L"+ chunk %d @ size: %.0f MB\n", n, CHUNKSIZE / MDIV);
     showMemoryConsumption();
     if (!p)
     {
