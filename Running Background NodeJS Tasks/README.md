@@ -37,6 +37,6 @@ Before we put it to Qiqqa, it will be tested here.
 
 ## Update
 
-This will be done in a quite different way as thee planned approach is to use a small C/C++-based webserver with MuPDF and Tesseract built in; any scriptable processes are very probably happening in there as that component will handle a large part of the important traffic.
+This will be done in a quite different way as the planned approach is to use a small C/C++-based webserver with MuPDF and Tesseract built in; any scriptable processes are very probably happening in there as that component will handle a large part of the important traffic.
 
 To be addressed again later when this has grown more from the ideas phase into the realisation phase. Currently, a lot of work is still happening on the MuPDF-based tooling, so we're getting there, but have not yet arrived at a point where discussing background task scripting is useful -- the idea is kept in mind while the other, more fundamental, tools are developed to a workable professional whole.
