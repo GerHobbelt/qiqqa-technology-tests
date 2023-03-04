@@ -73,11 +73,11 @@ if (!(check))                   \
 
 static float round_nice(float v)
 {
-    float lg = log10(v / 10);
-    int d = round(lg);
-    float pw = pow(10, d);
+    float lg = log10f(v / 10.0f);
+    float d = roundf(lg);
+    float pw = powf(10.0f, d);
     float vi = v / pw;
-    vi = round(vi);
+    vi = roundf(vi);
     vi *= pw;
     return vi;
 }
@@ -363,7 +363,7 @@ static void showMemoryConsumption()
 static void growHeapAndWatch(int n)
 {
     const size_t AV_MEM_1PCT = (size_t)(round_nice(available_memory_size / MDIV / 100) * MDIV);
-    const size_t CHUNKSIZE = MAX(25e6, AV_MEM_1PCT);
+    const size_t CHUNKSIZE = MAX((size_t) 25e6, AV_MEM_1PCT);
     void* p = malloc(CHUNKSIZE);
     ++n;
     debugPrint(L"+ chunk %d @ size: %.0f MB\n", n, CHUNKSIZE / MDIV);
